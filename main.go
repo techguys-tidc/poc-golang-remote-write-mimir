@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 type TimeSeries struct {
@@ -21,9 +23,22 @@ type TimeSeries struct {
 const MIMIR_URL = "10.10.71.25:9009"
 
 func main() {
-	timeSeriesData := []TimeSeries{
-		{Hostgroup: "Linux servers", Name: "gong test alert from zabbix", Source: "zabbix_test", Group: "alert"},
-		{Hostgroup: "Windows servers", Name: "another test alert", Source: "test_source", Group: "test_group"},
+	timeSeriesData := []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{
+					Name:  "__name__",
+					Value: "foo_bar",
+				},
+				{
+					Name:  "biz",
+					Value: "baz",
+				},
+			},
+			Samples: []prompb.Sample{
+				{Value: float64(100), Timestamp: time.Now().UnixMilli()},
+			},
+		},
 	}
 	_, err := Push(timeSeriesData)
 	if err != nil {
@@ -33,10 +48,9 @@ func main() {
 }
 
 // Push the input timeseries to the remote endpoint
-func Push(timeseries []TimeSeries) (*http.Response, error) {
-	data, err := json.Marshal(timeseries)
+func Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
+	data, err := proto.Marshal(&prompb.WriteRequest{Timeseries: timeseries})
 	if err != nil {
-		fmt.Println("Error marshaling JSON:", err)
 		return nil, err
 	}
 
@@ -63,5 +77,10 @@ func Push(timeseries []TimeSeries) (*http.Response, error) {
 	}
 
 	defer res.Body.Close()
+
+	s, err := io.ReadAll(res.Body)
+
+	fmt.Println("--------------")
+	fmt.Println(string(s), err)
 	return res, nil
 }
